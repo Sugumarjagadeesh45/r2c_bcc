@@ -4,7 +4,7 @@
 
 Use this to verify your backend is working correctly before debugging the frontend.
 
-### 🟢 POST: Upload Profile Picture
+### 🟢 POST: Upload Profile Pictu
 *   **URL:** `http://localhost:5000/api/user/profile-picture`
 *   **Method:** `POST`
 *   **Auth:** Bearer Token (Header: `Authorization: Bearer <YOUR_TOKEN>`)
