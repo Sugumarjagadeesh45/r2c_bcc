@@ -12,6 +12,7 @@ const messageRoutes = require('./routes/messageRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const fcmTokenRoutes = require('./routes/fcmTokenRoutes');
+const nearbyRoutes = require('./routes/nearbyRoutes');
 
 
 
@@ -53,6 +54,7 @@ app.use('/api', messageRoutes);
 app.use('/api', conversationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/fcm', fcmTokenRoutes);
+app.use('/api/nearby', nearbyRoutes);
 app.use('/api/notifications', fcmTokenRoutes);
 // Now import testFCMRoutes after all middleware is setup
 try {
