@@ -1,35 +1,160 @@
+//emailJS
+
+// const express = require('express');
+// const router = express.Router();
+// const authController = require('../controllers/authController');
+// const protect = require('../middleware/auth');
+
+// // Debug log
+// console.log('✅ Auth routes loaded');
+
+// // Public routes
+// router.post('/send-otp-email', authController.sendOTPEmail);
+// router.post('/verify-email-otp', authController.verifyEmailOTP);
+// router.get('/otp-status', authController.getOTPStatus);
+// router.post('/register', authController.register);
+// router.post('/google-signin', authController.googleSignIn);
+// router.post('/verify-phone', authController.verifyPhone);
+// router.post('/check-user-id', authController.checkUserId);
+// router.get('/generate-user-id', authController.generateUserId);
+// router.post('/reset-password', authController.resetPassword);
+// router.get('/check-google-config', authController.checkGoogleConfig);
+// router.get('/check-email-config', authController.checkEmailConfig);
+// router.post('/login', authController.login);
+// router.post('/check-user', authController.checkUser);
+// router.post('/set-password', authController.setPassword);
+// router.post('/test-email-delivery', authController.testEmailDelivery);
+// router.post('/test-emailjs-directly', authController.testEmailJSDirectly);
+// router.post('/google-phone', authController.googlePhone);
+
+// // Protected routes
+// router.post('/update-profile', protect, authController.updateProfile);
+// router.post('/logout', protect, authController.logout);
+
+// // Get current user
+// router.get('/me', protect, (req, res) => {
+//   res.json({
+//     success: true,
+//     user: req.user
+//   });
+// });
+
+// module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// node mailr & emailJS
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const protect = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
+const User = require('../models/userModel');
 
-// Debug log
-console.log('✅ Auth routes loaded');
+console.log('authController:', Object.keys(authController));
+
+// Helper functions for tokens
+const generateAccessToken = (user) => {
+  return jwt.sign({ id: user._id, userId: user.userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+};
 
 // Public routes
-router.post('/send-otp-email', authController.sendOTPEmail);
-router.post('/verify-email-otp', authController.verifyEmailOTP);
-router.get('/otp-status', authController.getOTPStatus);
-router.post('/register', authController.register);
-router.post('/google-signin', authController.googleSignIn);
-router.post('/verify-phone', authController.verifyPhone);
 router.post('/check-user-id', authController.checkUserId);
 router.get('/generate-user-id', authController.generateUserId);
 router.post('/reset-password', authController.resetPassword);
-router.get('/check-google-config', authController.checkGoogleConfig);
-router.get('/check-email-config', authController.checkEmailConfig);
+router.post('/register', authController.register);
+router.post('/verify-phone', authController.verifyPhone);
+router.post('/google-signin', authController.googleSignIn);
+router.post('/google-phone', authController.googlePhone);
 router.post('/login', authController.login);
 router.post('/check-user', authController.checkUser);
+router.post('/send-otp-email', authController.sendOTPEmail);
+router.post('/verify-email-otp', authController.verifyEmailOTP);
 router.post('/set-password', authController.setPassword);
+router.get('/check-google-config', authController.checkGoogleConfig);
+
+// Additional routes from AI suggestion
+router.get('/otp-status', authController.getOTPStatus);
+router.get('/check-email-config', authController.checkEmailConfig);
 router.post('/test-email-delivery', authController.testEmailDelivery);
 router.post('/test-emailjs-directly', authController.testEmailJSDirectly);
-router.post('/google-phone', authController.googlePhone);
+
+// Token refresh with proper error handling
+router.post('/refresh-token', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token is required' });
+    }
+    
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    
+    // Verify user still exists
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    const newAccessToken = generateAccessToken(user);
+    res.json({ 
+      success: true,
+      accessToken: newAccessToken 
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Refresh token expired' 
+      });
+    }
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Invalid refresh token' 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Server error during token refresh' 
+    });
+  }
+});
 
 // Protected routes
 router.post('/update-profile', protect, authController.updateProfile);
 router.post('/logout', protect, authController.logout);
-
-// Get current user
 router.get('/me', protect, (req, res) => {
   res.json({
     success: true,
@@ -38,6 +163,14 @@ router.get('/me', protect, (req, res) => {
 });
 
 module.exports = router;
+
+
+
+
+
+
+
+// OLD code
 
 
 // const express = require('express');
