@@ -32,7 +32,7 @@ router.get('/check-google-config', authController.checkGoogleConfig);
 router.get('/check-email-config', authController.checkEmailConfig);
 router.get('/otp-status', authController.getOTPStatus);
 router.post('/test-email-delivery', authController.testEmailDelivery);
-router.post('/test-nodemailer-directly', authController.testNodeMailerDirectly);
+router.post('/test-emailjs-directly', authController.testEmailJSDirectly);
 
 // Token refresh with proper error handling
 router.post('/refresh-token', async (req, res) => {

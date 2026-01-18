@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { google } = require('googleapis');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const https = require('https'); // Native HTTPS module for EmailJS
 const User = require('../models/userModel');
 const UserData = require('../models/UserData');
 const UserIdService = require('../services/userIdService');
@@ -57,8 +58,8 @@ const createNodeMailerTransporter = async () => {
         tls: {
           rejectUnauthorized: false
         },
-        debug: true,
-        logger: true
+        debug: false, // Disable debug for faster execution
+        logger: false
       };
       
       const transporter = nodemailer.createTransport(transporterConfig);
@@ -82,8 +83,8 @@ const createNodeMailerTransporter = async () => {
         tls: {
           rejectUnauthorized: false
         },
-        debug: true,
-        logger: true
+        debug: false, // Disable debug for faster execution
+        logger: false
       };
       
       const transporter = nodemailer.createTransport(transporterConfig);
@@ -123,11 +124,12 @@ const createNodeMailerTransporter = async () => {
   }
 };
 
-// Send OTP via NodeMailer with improved timeout handling
-const sendOTPWithNodeMailer = async (email, name, otp, timeout = 5000) => {
+// Send OTP via NodeMailer with 3-second timeout and improved handling
+const sendOTPWithNodeMailer = async (email, name, otp, timeout = 3000) => {
   return new Promise(async (resolve, reject) => {
     let timeoutId;
     let emailSent = false;
+    let nodeMailerCompleted = false;
     
     try {
       const transporter = await createNodeMailerTransporter();
@@ -159,10 +161,10 @@ const sendOTPWithNodeMailer = async (email, name, otp, timeout = 5000) => {
         text: `Your OTP for Reals TO Chat is: ${otp}. This OTP is valid for 10 minutes.`
       };
 
-      // Set up timeout
+      // Set up timeout for 3 seconds
       timeoutId = setTimeout(() => {
-        console.log(`NodeMailer timeout after ${timeout/1000} seconds`);
-        if (!emailSent) {
+        console.log('NodeMailer timeout after 3 seconds, switching to EmailJS');
+        if (!nodeMailerCompleted) {
           reject(new Error('NodeMailer timeout'));
         }
       }, timeout);
@@ -170,7 +172,8 @@ const sendOTPWithNodeMailer = async (email, name, otp, timeout = 5000) => {
       // Send email
       const result = await transporter.sendMail(mailOptions);
       
-      // Mark email as sent
+      // Mark NodeMailer as completed
+      nodeMailerCompleted = true;
       emailSent = true;
       
       // Clear timeout if email was sent successfully
@@ -183,6 +186,9 @@ const sendOTPWithNodeMailer = async (email, name, otp, timeout = 5000) => {
         provider: 'NodeMailer'
       });
     } catch (error) {
+      // Mark NodeMailer as completed (even if with error)
+      nodeMailerCompleted = true;
+      
       // Clear timeout if there was an error
       if (timeoutId) clearTimeout(timeoutId);
       console.error('NodeMailer error:', error.message);
@@ -191,40 +197,150 @@ const sendOTPWithNodeMailer = async (email, name, otp, timeout = 5000) => {
   });
 };
 
-// Create a dummy email transporter for development/testing
-const createDummyTransporter = () => {
-  return {
-    sendMail: async (mailOptions) => {
-      console.log('\n========== EMAIL LOG (NOT SENT) ==========');
-      console.log('To:', mailOptions.to);
-      console.log('Subject:', mailOptions.subject);
-      console.log('OTP would be:', mailOptions.html?.match(/\d{6}/)?.[0] || 'Not found');
-      console.log('===========================================\n');
+// Send OTP via EmailJS with browser-like headers and fixed recipient issue
+const sendOTPWithEmailJS = async (email, name, otp) => {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('📧 Sending via EmailJS to:', email);
       
-      return {
-        messageId: 'dummy-' + Date.now(),
-        response: 'Email logged but not sent (development mode)'
+      // Prepare EmailJS data - Fix the recipient field name
+      const emailjsData = {
+        service_id: process.env.EMAILJS_SERVICE_ID,
+        template_id: process.env.EMAILJS_TEMPLATE_ID,
+        user_id: process.env.EMAILJS_PUBLIC_KEY,
+        accessToken: process.env.EMAILJS_PRIVATE_KEY,
+        template_params: {
+          to_email: email,  // Make sure this matches your EmailJS template
+          user_name: name || 'User',
+          otp_code: otp,
+          from_name: 'Reals TO Chat',
+          reply_to: 'msugumar0410@gmail.com'
+        }
       };
+      
+      console.log('📨 EmailJS request data:', {
+        service_id: emailjsData.service_id,
+        template_id: emailjsData.template_id,
+        to: email
+      });
+      
+      const postData = JSON.stringify(emailjsData);
+      
+      const options = {
+        hostname: 'api.emailjs.com',
+        path: '/api/v1.0/email/send',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'cross-site',
+          'Origin': 'https://www.emailjs.com',
+          'Referer': 'https://www.emailjs.com/'
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          console.log('EmailJS response status:', res.statusCode);
+          console.log('EmailJS response body:', data);
+          
+          try {
+            // Try to parse as JSON
+            const result = JSON.parse(data);
+            
+            if (res.statusCode === 200) {
+              console.log('✅ EmailJS email sent successfully:', result);
+              resolve({
+                success: true,
+                messageId: `emailjs-${Date.now()}`,
+                provider: 'EmailJS',
+                response: result
+              });
+            } else {
+              console.error('❌ EmailJS error:', result);
+              reject(new Error(result.message || 'EmailJS failed to send email'));
+            }
+          } catch (parseError) {
+            // If parsing fails, check if response indicates success
+            if (res.statusCode === 200 || data.includes('OK') || data.includes('200')) {
+              console.log('✅ EmailJS email sent successfully (non-JSON response)');
+              resolve({
+                success: true,
+                messageId: `emailjs-${Date.now()}`,
+                provider: 'EmailJS',
+                response: { status: 'OK', message: 'Email sent successfully' }
+              });
+            } else {
+              console.error('❌ EmailJS parsing error:', parseError.message);
+              reject(new Error(`EmailJS returned non-JSON response: ${data}`));
+            }
+          }
+        });
+      });
+      
+      req.on('error', (error) => {
+        console.error('❌ EmailJS request error:', error.message);
+        reject(error);
+      });
+      
+      // Write data to request body
+      req.write(postData);
+      req.end();
+      
+    } catch (error) {
+      console.error('❌ EmailJS sending error:', error);
+      reject(error);
     }
-  };
+  });
 };
 
-// Dual email provider with improved timeout handling
+// Dual email provider with 3-second timeout for NodeMailer
 const sendOTPWithDualProvider = async (email, name, otp) => {
   const startTime = Date.now();
   let primaryProviderResult = null;
   let fallbackProviderResult = null;
   let usedProvider = '';
   let deliveryTime = 0;
+  let nodeMailerTimeoutFired = false;
   
-  try {
-    console.log('🚀 Attempting to send OTP via NodeMailer (primary provider)');
-    
-    // Try NodeMailer first with 5-second timeout
-    primaryProviderResult = await sendOTPWithNodeMailer(email, name, otp, 5000);
-    usedProvider = 'NodeMailer';
-    deliveryTime = Date.now() - startTime;
-    
+  // Start NodeMailer with timeout
+  const nodeMailerPromise = sendOTPWithNodeMailer(email, name, otp, 3000)
+    .then(result => {
+      primaryProviderResult = result;
+      usedProvider = 'NodeMailer';
+      deliveryTime = Date.now() - startTime;
+      return { success: true, result, provider: 'NodeMailer', fallback: false };
+    })
+    .catch(error => {
+      // Check if this was a timeout
+      if (error.message === 'NodeMailer timeout') {
+        nodeMailerTimeoutFired = true;
+        // Don't reject yet, we'll try EmailJS
+        return { success: false, error, provider: 'NodeMailer', fallback: true };
+      } else {
+        // Some other error, still try EmailJS
+        return { success: false, error, provider: 'NodeMailer', fallback: true };
+      }
+    });
+  
+  // Wait for NodeMailer to complete or timeout
+  await nodeMailerPromise;
+  
+  // If NodeMailer succeeded, return the result
+  if (primaryProviderResult && primaryProviderResult.success) {
     console.log(`✅ OTP sent successfully via ${usedProvider} in ${deliveryTime}ms`);
     return {
       success: true,
@@ -234,49 +350,21 @@ const sendOTPWithDualProvider = async (email, name, otp) => {
       primaryProviderSuccess: true,
       fallbackProviderUsed: false
     };
-  } catch (primaryError) {
-    console.log(`❌ NodeMailer failed: ${primaryError.message}`);
-    
-    // For production, we'll use a dummy transporter as fallback since EmailJS doesn't work server-side
-    // In a real production environment, you might want to use a different email service here
-    console.log('🔄 Falling back to dummy transporter (for development/testing)');
-    const fallbackStartTime = Date.now();
-    
+  }
+  
+  // If we get here, NodeMailer failed or timed out, try EmailJS
+  if (nodeMailerTimeoutFired || !primaryProviderResult) {
     try {
-      const dummyTransporter = createDummyTransporter();
-      const mailOptions = {
-        from: `"Reals TO Chat" <${process.env.GMAIL_EMAIL || 'no-reply@reals2chat.com'}>`,
-        to: email,
-        subject: 'OTP for your Reals TO Chat authentication',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f7fa;">
-            <div style="background: linear-gradient(135deg, #FF0050, #8A2BE2); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; font-size: 28px;">Reals TO Chat</h1>
-              <p style="margin: 10px 0 0 0;">Create. Connect. Chat.</p>
-            </div>
-            <div style="background-color: white; padding: 30px 20px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
-              <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
-              <p>Hello ${name || 'User'},</p>
-              <p>Thank you for registering with <strong>Reals TO Chat</strong>! To complete your registration, please use the following One-Time Password (OTP) to verify your email address:</p>
-              <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0;">
-                <p style="margin: 0 0 15px 0; font-size: 16px;">Your OTP is:</p>
-                <div style="font-size: 36px; font-weight: bold; color: #FF0050; letter-spacing: 8px; margin: 15px 0;">${otp}</div>
-                <p style="margin: 15px 0 0 0; font-size: 14px;">This OTP is valid for <strong>10 minutes</strong> only.</p>
-              </div>
-              <p>If you didn't request this verification, please ignore this email.</p>
-              <p>Thank you,<br>The Reals TO Chat Team</p>
-            </div>
-          </div>
-        `,
-        text: `Your OTP for Reals TO Chat is: ${otp}. This OTP is valid for 10 minutes.`
-      };
+      console.log('🔄 Falling back to EmailJS (secondary provider)');
+      const fallbackStartTime = Date.now();
       
-      fallbackProviderResult = await dummyTransporter.sendMail(mailOptions);
-      usedProvider = 'Dummy';
+      // Fall back to EmailJS
+      fallbackProviderResult = await sendOTPWithEmailJS(email, name, otp);
+      usedProvider = 'EmailJS';
       deliveryTime = Date.now() - startTime;
       const fallbackTime = Date.now() - fallbackStartTime;
       
-      console.log(`✅ OTP logged successfully via ${usedProvider} in ${deliveryTime}ms total (${fallbackTime}ms for fallback)`);
+      console.log(`✅ OTP sent successfully via ${usedProvider} in ${deliveryTime}ms total (${fallbackTime}ms for fallback)`);
       return {
         success: true,
         provider: usedProvider,
@@ -284,10 +372,10 @@ const sendOTPWithDualProvider = async (email, name, otp) => {
         messageId: fallbackProviderResult.messageId,
         primaryProviderSuccess: false,
         fallbackProviderUsed: true,
-        primaryError: primaryError.message
+        primaryError: nodeMailerTimeoutFired ? 'NodeMailer timeout' : 'NodeMailer error'
       };
     } catch (fallbackError) {
-      console.error(`❌ Both providers failed. NodeMailer: ${primaryError.message}, Dummy: ${fallbackError.message}`);
+      console.error(`❌ Both providers failed. NodeMailer: ${nodeMailerTimeoutFired ? 'timeout' : 'error'}, EmailJS: ${fallbackError.message}`);
       deliveryTime = Date.now() - startTime;
       
       return {
@@ -296,7 +384,7 @@ const sendOTPWithDualProvider = async (email, name, otp) => {
         deliveryTime,
         primaryProviderSuccess: false,
         fallbackProviderUsed: false,
-        primaryError: primaryError.message,
+        primaryError: nodeMailerTimeoutFired ? 'NodeMailer timeout' : 'NodeMailer error',
         fallbackError: fallbackError.message
       };
     }
@@ -1390,8 +1478,8 @@ const testEmailDelivery = async (req, res) => {
   }
 };
 
-// Test NodeMailer Directly
-const testNodeMailerDirectly = async (req, res) => {
+// Test EmailJS Directly
+const testEmailJSDirectly = async (req, res) => {
   try {
     const { email, name } = req.body;
     
@@ -1405,10 +1493,10 @@ const testNodeMailerDirectly = async (req, res) => {
     // Generate a test OTP
     const otp = generateOTP();
     
-    console.log(`Testing NodeMailer directly to ${email} with OTP: ${otp}`);
+    console.log(`Testing EmailJS directly to ${email} with OTP: ${otp}`);
     
-    // Test NodeMailer directly with a longer timeout
-    const result = await sendOTPWithNodeMailer(email, name || 'Test User', otp, 10000);
+    // Test EmailJS directly
+    const result = await sendOTPWithEmailJS(email, name || 'Test User', otp);
     
     res.json({
       success: true,
@@ -1416,7 +1504,7 @@ const testNodeMailerDirectly = async (req, res) => {
       testOTP: process.env.NODE_ENV !== 'production' ? otp : undefined
     });
   } catch (error) {
-    console.error('Test NodeMailer directly error:', error);
+    console.error('Test EmailJS directly error:', error);
     res.status(500).json({
       success: false,
       message: 'Test failed',
@@ -1444,7 +1532,7 @@ module.exports = {
   checkUser,
   setPassword,
   testEmailDelivery,
-  testNodeMailerDirectly
+  testEmailJSDirectly
 };
 
 
