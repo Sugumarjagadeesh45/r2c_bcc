@@ -1,4 +1,4 @@
-# Nearby Friends & Live Location System - Frontend Implementation Guide
+# Nearby Friends & Live Location System - Professional Implementation Guide
 
 ## 1. 🚨 Critical Fix for Current Error
 You are missing the geolocation package. Run this command in your project root (`D:\rrr222ccc\f_c`):
@@ -64,8 +64,28 @@ Then rebuild the app.
 - **Premium Users:** Will receive all users active within the last 24 hours.
 - **Socket.IO:** The backend automatically handles online/offline status when the socket connects/disconnects. You do not need to manually emit "online" events, just ensure the socket is connected with the user's token.
 - **Data Cleanup:** Location data is automatically deleted from the database after 24 hours.
+---
 
 ## 4. Troubleshooting Common Errors
+## 5. 👤 Profile Navigation & Friend Requests
+
+### Profile Navigation
+When a nearby user is clicked:
+1.  **Navigate to:** `src/MessagerProfile.tsx`
+2.  **Data Loading:** The page must fetch **complete** user profile data using the `getOtherUserProfile` endpoint.
+    - Basic details (Name, Bio, Age)
+    - Interaction info (Friendship Status, Common Interests)
+
+### Friend Request Consistency
+Friend requests must work identically from both **Search** and **Nearby List**.
+- **Search Keys:** Username, Mobile Number, Email, User ID.
+- **Action:** Sending a request must immediately reflect "Request Sent" status and notify the target user via Socket.IO/FCM.
+
+---
+
+## 6. Logic & Privacy Notes
+
+## 7. Troubleshooting Common Errors
 
 ### ❌ Error: "unable to find index for $geoNear query"
 - **Cause:** You are hitting the wrong endpoint (`/api/user/nearby`).
@@ -84,6 +104,7 @@ Then rebuild the app.
 - **Fix:** Add `&includeSelf=true` to your GET request URL to verify the data is there.
 
 ## 5. 🚨 Android Crash Fix: "Tried to use permissions API while not attached to an Activity"
+## 8. 🚨 Android Crash Fix: "Tried to use permissions API while not attached to an Activity"
 
 **The Issue:**
 You see `java.lang.IllegalStateException` in your logs. This happens because the app is trying to request location permissions **before** the screen is fully visible or while the app is in the background/transitioning.

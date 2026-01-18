@@ -240,6 +240,7 @@ const searchNearbyUsers = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Longitude and latitude are required.' });
     }
 
+    // 1. Update Requester's Location
     const user = await UserData.findOne({ userId: req.user.id });
     if (user && user.location) {
       user.location.coordinates = [parseFloat(longitude), parseFloat(latitude)];
@@ -255,8 +256,13 @@ const searchNearbyUsers = async (req, res) => {
         await newUser_data.save();
     }
 
-    // Find users near the current user
-    const users = await UserData.find({
+    // 2. Determine User Type (Free vs Premium)
+    // Assuming 'isPremium' is a field on the User model. Default to false (Free) if missing.
+    const requester = await User.findById(req.user.id);
+    const isPremium = requester.isPremium || false;
+
+    // 3. Build Query based on Visibility Rules
+    let query = {
       userId: { $ne: req.user.id },
       location: {
         $near: {
@@ -267,9 +273,23 @@ const searchNearbyUsers = async (req, res) => {
           $maxDistance: parseInt(maxDistance) || 10000 // 10km in meters
         }
       }
-    }).populate('userId', 'name email userId photoURL phone');
+    };
 
-    res.json({ success: true, users });
+    if (isPremium) {
+      // Premium: Show users online OR active within last 24 hours
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      query.$or = [
+        { isOnline: true },
+        { lastActive: { $gte: twentyFourHoursAgo } }
+      ];
+    } else {
+      // Free: Show ONLY currently online users
+      query.isOnline = true;
+    }
+
+    const users = await UserData.find(query).populate('userId', 'name email userId photoURL phone');
+
+    res.json({ success: true, users, isPremium });
   } catch (error) {
     console.error('Error searching nearby users:', error);
     res.status(500).json({ success: false, message: 'Server error' });
