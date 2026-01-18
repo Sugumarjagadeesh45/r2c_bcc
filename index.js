@@ -81,11 +81,18 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// ✅ Start server only after DB connects
-connectDB().then(() => {
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+// ✅ Start server immediately (Modified for debugging EmailJS)
+// connectDB().then(() => {
+//   server.listen(PORT, '0.0.0.0', () => {
+//     console.log(`Server running on port ${PORT}`);
+//   });
+// });
+
+// Start server regardless of DB status to allow testing EmailJS
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} (DB Check Bypassed)`);
+  // Attempt DB connection in background
+  connectDB().catch(err => console.log('⚠️ DB Connection failed, but server is running for testing.'));
 });
 
 // Handle unhandled promise rejections (e.g. DB connection failures)
